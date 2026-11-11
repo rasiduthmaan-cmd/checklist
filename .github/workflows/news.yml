@@ -1,0 +1,29 @@
+name: Update news
+on:
+  schedule:
+    - cron: '7 * * * *'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch feed
+        run: |
+          code=$(curl -s -o new.json -w "%{http_code}" -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36" -H "Accept: application/json" https://nfs.faireconomy.media/ff_calendar_thisweek.json)
+          echo "HTTP $code"
+          if [ "$code" = "200" ] && python3 -c "import json;json.load(open('new.json'))"; then
+            mv new.json news.json
+          else
+            echo "Feed not updated"
+            ok=no
+          fi
+          git config user.name "news-bot"
+          git config user.email "news-bot@users.noreply.github.com"
+          if [ -f news.json ]; then
+            git add news.json
+            git diff --cached --quiet || (git commit -m "Update news" && git push)
+          fi
+          [ "$ok" = "no" ] && exit 1 || exit 0
