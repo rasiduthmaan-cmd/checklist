@@ -104,6 +104,11 @@ h2{font-size:18px;margin:0;font-weight:600}
 .jd{margin-top:8px;padding-top:8px;border-top:1px solid var(--line);font-size:14px}
 .jd p{margin:4px 0;white-space:pre-wrap}
 .jd b{font-weight:600}
+.risk{margin:10px 0 2px}
+.rb{display:flex;gap:4px}
+.rb i{flex:1;height:8px;border-radius:4px}
+.rt{font-size:14px;color:var(--muted);margin-top:6px}
+.rt b{font-weight:700}
 @media (prefers-reduced-motion:reduce){.progress i{transition:none}}
 </style>
 </head>
@@ -121,7 +126,7 @@ h2{font-size:18px;margin:0;font-weight:600}
     <div class="sh"><span class="n">J</span><h2>Daily journal</h2></div>
     <div class="jgrid">
       <label>Result<select id="j-outcome"><option value="">Select</option><option>Win</option><option>Loss</option><option>Breakeven</option><option>No trade</option></select></label>
-      <label>Result in R<input id="j-r" type="number" step="0.1" inputmode="decimal" placeholder="1.5 or -1"></label>
+      <label>Result in R<input id="j-r" type="text" placeholder="1.5 or -1" autocomplete="off" autocapitalize="off"></label>
       <label>Followed the plan?<select id="j-plan"><option value="">Select</option><option>Yes</option><option>Partly</option><option>No</option></select></label>
       <label>London bias was right?<select id="j-bias"><option value="">Select</option><option>Yes</option><option>No</option><option>Unsure</option></select></label>
     </div>
@@ -229,7 +234,7 @@ h2{font-size:18px;margin:0;font-weight:600}
     });
     return b+'</div>';
   }
-  var CONF=['Break of structure','Fair value gap','Equilibrium','Order block'];
+  var CONF=['Liquidity sweep','Break of structure','Fair value gap','Order block','Equilibrium'];
   var TRADE=['Has lot size been updated?','Enter trade'];
   var BIAS=[
     {k:'m',t:'Manipulation',d:'Asian session swept a level',r:'Reversal'},
@@ -240,13 +245,14 @@ h2{font-size:18px;margin:0;font-weight:600}
   var mem=null;
 
   function today(){return new Intl.DateTimeFormat('en-CA',{timeZone:TZ}).format(new Date());}
-  function fresh(){return {date:today(),news:[0,0,0],asian:null,dir:null,conf:[0,0,0,0],trade:[0,0],j:{outcome:'',r:'',plan:'',biasRight:'',notes:''}};}
+  function fresh(){return {date:today(),news:[0,0,0],asian:null,dir:null,conf:[0,0,0,0,0],trade:[0,0],j:{outcome:'',r:'',plan:'',biasRight:'',notes:''}};}
   function load(){
     var s=null;
     try{var raw=localStorage.getItem(KEY); if(raw) s=JSON.parse(raw);}catch(e){}
     if(!s) s=mem;
     if(!s||s.date!==today()) s=fresh();
     if(!s.j) s.j=fresh().j;
+    if(!s.conf||s.conf.length!==5) s.conf=[0,0,0,0,0];
     return s;
   }
   function save(){mem=S; try{localStorage.setItem(KEY,JSON.stringify(S));}catch(e){}}
@@ -255,9 +261,19 @@ h2{font-size:18px;margin:0;font-weight:600}
   function sum(a){return a.reduce(function(x,y){return x+y;},0);}
   function doneNews(){return sum(S.news)===3;}
   function doneBias(){return S.asian!==null;}
-  function doneConf(){return sum(S.conf)>=3;}
-  function ready(){return doneNews()&&doneBias()&&doneConf();}
+  function doneConf(){return sum(S.conf)>=1;}
+  function ready(){return doneNews()&&doneBias();}
 
+  var RISK=[null,{t:'High',c:'#D64545'},{t:'Medium-high',c:'#E08A2E'},{t:'Medium',c:'#C9A227'},{t:'Medium-low',c:'#7FB04A'},{t:'Low',c:'#2E9E5B'}];
+  function riskHTML(){
+    var n=sum(S.conf), r=RISK[n], segs='';
+    for(var i=1;i<=5;i++) segs+='<i style="background:'+(i<=n?r.c:'var(--line)')+'"></i>';
+    return '<div class="risk"><div class="rb">'+segs+'</div><div class="rt">'+(r?'Risk: <b style="color:'+r.c+'">'+r.t+'</b> · '+n+' of 5 confluences':'Tick confluences to see the risk rating')+'</div></div>';
+  }
+  function confText(){
+    var n=sum(S.conf); if(!n) return '';
+    return CONF.filter(function(t,i){return S.conf[i];}).join(', ')+' ('+n+'/5, '+RISK[n].t.toLowerCase()+' risk)';
+  }
   function row(g,i,label,extra){
     var on=S[g][i]?'true':'false';
     var locked=extra&&extra.locked&&!S[g][i];
@@ -287,20 +303,20 @@ h2{font-size:18px;margin:0;font-weight:600}
     }
     h+='</section>';
 
-    h+='<section class="'+(doneConf()?'complete':'')+'">'+head(3,'Confluences',doneConf(),sum(S.conf)+' of 4 (3 needed)');
-    CONF.forEach(function(t,i){h+=row('conf',i,t);});
+    h+='<section class="'+(doneConf()?'complete':'')+'">'+head(3,'Confluences',doneConf(),sum(S.conf)+' of 5');
+    CONF.forEach(function(t,i){h+=row('conf',i,t);});h+=riskHTML();
     h+='</section>';
 
     var tdone=sum(S.trade)===2;
     h+='<section class="'+(tdone?'complete':'')+'">'+head(4,'Trade',tdone,sum(S.trade)+' of 2');
     h+=row('trade',0,TRADE[0]);
     h+=row('trade',1,TRADE[1],{green:true,locked:!ready()});
-    if(!ready()&&!S.trade[1]) h+='<p class="hint">Finish steps 1 to 3 to unlock Enter trade.</p>';
+    if(!ready()&&!S.trade[1]) h+='<p class="hint">Finish News and Daily bias to unlock Enter trade.</p>';
     h+='</section>';
 
     document.getElementById('app').innerHTML=h;
 
-    var total=3+1+3+2, got=sum(S.news)+(S.asian?1:0)+Math.min(sum(S.conf),3)+sum(S.trade);
+    var total=3+1+2, got=sum(S.news)+(S.asian?1:0)+sum(S.trade);
     document.getElementById('fill').style.width=(got/total*100)+'%';
     document.getElementById('cnt').textContent=got+' of '+total+' done';
     var all=got===total;
@@ -326,15 +342,15 @@ h2{font-size:18px;margin:0;font-weight:600}
   function $(id){return document.getElementById(id);}
   function jmsg(t){$('jmsg').textContent=t;}
   function jFill(){var j=S.j;$('j-outcome').value=j.outcome;$('j-r').value=j.r;$('j-plan').value=j.plan;$('j-bias').value=j.biasRight;$('j-notes').value=j.notes;}
-  function jRead(){S.j={outcome:$('j-outcome').value,r:$('j-r').value,plan:$('j-plan').value,biasRight:$('j-bias').value,notes:$('j-notes').value};save();}
+  function jRead(){S.j={outcome:$('j-outcome').value,r:$('j-r').value.replace('\u2212','-').replace(',','.').trim(),plan:$('j-plan').value,biasRight:$('j-bias').value,notes:$('j-notes').value};save();}
   ['j-outcome','j-r','j-plan','j-bias','j-notes'].forEach(function(id){$(id).addEventListener('input',jRead);});
   function entry(){
     var b=BIAS.filter(function(x){return x.k===S.asian;})[0];
-    var got=sum(S.news)+(S.asian?1:0)+Math.min(sum(S.conf),3)+sum(S.trade);
+    var got=sum(S.news)+(S.asian?1:0)+sum(S.trade);
     return {date:S.date,bias:b?b.t+' (London: '+b.r+')':'',direction:S.dir||'',
-      confluences:CONF.filter(function(t,i){return S.conf[i];}).join(', '),
+      confluences:confText(),
       outcome:S.j.outcome,r:S.j.r,plan:S.j.plan,biasRight:S.j.biasRight,notes:S.j.notes,
-      checklist:got+'/9'+(S.trade[0]?', lot size updated':'')+(S.trade[1]?', trade entered':'')};
+      checklist:got+'/6'+(S.trade[0]?', lot size updated':'')+(S.trade[1]?', trade entered':'')};
   }
   function jSave(){
     if(!cfg.url||!cfg.secret){$('jsetup').open=true;jmsg('Add your Sheet link and passcode first.');return;}
