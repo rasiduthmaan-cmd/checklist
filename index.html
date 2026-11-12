@@ -82,6 +82,10 @@ h2{font-size:18px;margin:0;font-weight:600}
 .ev .s{color:var(--muted);font-size:13px}
 .dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px}
 .cur{display:inline-block;padding:0 6px;border-radius:4px;border:1px solid var(--line);font-size:12px;font-weight:600;margin-right:6px}
+.info{margin-top:6px;font-size:13px}
+.info summary{cursor:pointer;color:var(--accent)}
+.info p{margin:6px 0 0;color:var(--muted)}
+.info b{color:var(--ink);font-weight:600}
 @media (prefers-reduced-motion:reduce){.progress i{transition:none}}
 </style>
 </head>
@@ -94,7 +98,7 @@ h2{font-size:18px;margin:0;font-weight:600}
     <div class="count"><span id="cnt"></span><span>Resets at midnight London time</span></div>
   </header>
   <div id="app"></div>
-  <p class="done-msg" id="done">Checklist complete. Green trade logged for today.</p>
+  <p class="done-msg" id="done">Checklist complete. Trade entered for today.</p>
   <button class="reset" id="reset" type="button">Reset now</button>
 </main>
 <script>
@@ -104,6 +108,68 @@ h2{font-size:18px;margin:0;font-weight:600}
   var FEED='news.json';
   var news={state:'loading',items:[]};
   var IMP={High:{c:'#D64545'},Medium:{c:'#E08A2E'},Holiday:{c:'#8A97A3'}};
+  // EVENT_INFO START: edit the notes here. k = words to look for in the event title (lowercase, first match wins, put specific ones first), m = what it measures, e = usual effect.
+  var H='Higher than forecast is good for the currency.', L='Lower than forecast is good for the currency.';
+  var EVENT_INFO={
+    GBP:[
+      {k:'bank rate votes',m:'How many MPC members voted to raise, hold or cut the interest rate.',e:'More votes for a hike (or fewer for a cut) than expected is good for GBP.'},
+      {k:'official bank rate',m:'The interest rate set by the Bank of England.',e:'A higher rate than expected is good for GBP. The vote split and statement can matter more than the rate itself.'},
+      {k:'monetary policy summary',m:'The MPC’s reasoning and outlook for interest rates.',e:'A more hawkish tone than expected is good for GBP.'},
+      {k:'monetary policy report',m:'The Bank of England’s forecasts for inflation and growth.',e:'Higher rate or inflation forecasts than expected are good for GBP.'},
+      {k:'speaks',m:'Remarks from a central bank official.',e:'Hawkish comments are good for GBP, dovish comments are bad. It can move price without any data.'},
+      {k:'cpi',m:'Change in the prices consumers pay (core leaves out food and energy). The main driver of Bank of England policy.',e:H},
+      {k:'ppi',m:'Change in the prices manufacturers pay or charge. An early signal for consumer inflation.',e:H},
+      {k:'retail sales',m:'Change in the value of retail sales. A key gauge of consumer spending.',e:H},
+      {k:'gdp',m:'Change in the value of all goods and services produced.',e:H},
+      {k:'claimant count',m:'Change in the number of people claiming unemployment benefits.',e:L},
+      {k:'unemployment rate',m:'Share of the workforce that is jobless and looking for work.',e:L},
+      {k:'earnings',m:'Change in the wages paid to employees. Feeds into inflation.',e:H},
+      {k:'pmi',m:'Survey of purchasing managers. Above 50 means the sector is growing.',e:H},
+      {k:'production',m:'Change in the output of factories, mines and utilities.',e:H},
+      {k:'trade balance',m:'Difference between the value of exports and imports.',e:'A bigger surplus (or smaller deficit) than forecast is good for the currency.'},
+      {k:'current account',m:'Difference between money flowing in and out of the country.',e:'A bigger surplus (or smaller deficit) than forecast is good for the currency.'},
+      {k:'borrowing',m:'How much the government borrowed in the period.',e:L},
+      {k:'confidence',m:'Survey of how consumers feel about their finances and the economy.',e:H},
+      {k:'hpi',m:'Change in house prices.',e:H},
+      {k:'mortgage approvals',m:'Number of new mortgages approved by lenders.',e:H},
+      {k:'holiday',m:'Banks are closed.',e:'Few releases and thin trading, so moves can be erratic.'}
+    ],
+    JPY:[
+      {k:'policy rate',m:'The interest rate set by the Bank of Japan.',e:'A higher rate than expected is good for JPY. The statement and press conference can matter more.'},
+      {k:'monetary policy statement',m:'The Bank of Japan’s decision, reasoning and outlook.',e:'A more hawkish tone than expected is good for JPY.'},
+      {k:'press conference',m:'The Governor’s briefing after the policy decision.',e:'Hawkish remarks are good for JPY, dovish remarks are bad.'},
+      {k:'outlook report',m:'The Bank of Japan’s quarterly forecasts for growth and inflation.',e:'Higher growth or inflation forecasts are good for JPY.'},
+      {k:'speaks',m:'Remarks from a central bank official.',e:'Hawkish comments are good for JPY, dovish comments are bad. It can move price without any data.'},
+      {k:'cpi',m:'Change in the prices consumers pay. Tokyo CPI is an early read on the national figure.',e:H},
+      {k:'gdp',m:'Change in the value of all goods and services produced.',e:H},
+      {k:'tankan',m:'Quarterly survey of Japanese firms’ business conditions. Above 0 means more firms are optimistic than pessimistic.',e:H},
+      {k:'trade balance',m:'Difference between the value of exports and imports.',e:'A bigger surplus (or smaller deficit) than forecast is good for the currency.'},
+      {k:'current account',m:'Difference between money flowing in and out of the country.',e:'A bigger surplus (or smaller deficit) than forecast is good for the currency.'},
+      {k:'household spending',m:'Change in the amount households spend.',e:H},
+      {k:'unemployment rate',m:'Share of the workforce that is jobless and looking for work.',e:L},
+      {k:'earnings',m:'Change in the wages paid to employees. Feeds into inflation.',e:H},
+      {k:'retail sales',m:'Change in the value of retail sales.',e:H},
+      {k:'production',m:'Change in the output of factories, mines and utilities.',e:H},
+      {k:'machine',m:'Change in new orders for machinery, a gauge of business investment.',e:H},
+      {k:'economy watchers',m:'Survey of workers in retail and hospitality about current conditions. Above 50 is positive.',e:H},
+      {k:'pmi',m:'Survey of purchasing managers. Above 50 means the sector is growing.',e:H},
+      {k:'holiday',m:'Banks are closed.',e:'Few releases and thin trading, so moves can be erratic.'}
+    ]
+  };
+  // EVENT_INFO END
+  var FOLDER={High:'Red folder: high impact, can move price sharply.',Medium:'Orange folder: medium impact.',Holiday:'Grey folder: holiday or non-economic, expect thin trading.'};
+  function infoFor(e){
+    var t=String(e.title).toLowerCase(), list=EVENT_INFO[e.country]||[];
+    for(var i=0;i<list.length;i++){ if(t.indexOf(list[i].k)>-1) return list[i]; }
+    return null;
+  }
+  function infoHTML(e){
+    var i=infoFor(e), b='<details class="info"><summary>Measures and usual effect</summary>';
+    b+='<p><b>Folder:</b> '+FOLDER[e.impact]+'</p>';
+    if(i) b+='<p><b>Measures:</b> '+esc(i.m)+'</p><p><b>Usual effect:</b> '+esc(i.e)+'</p>';
+    else b+='<p>No note for this event yet. Add one in the EVENT_INFO list.</p>';
+    return b+'</details>';
+  }
   function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
   function loadNews(){
     fetch(FEED,{cache:'no-store'}).then(function(r){if(!r.ok) throw new Error('http '+r.status); return r.json();}).then(function(list){
@@ -122,12 +188,12 @@ h2{font-size:18px;margin:0;font-weight:600}
     else news.items.forEach(function(e){
       var tm=new Date(e.date).toLocaleTimeString('en-AU',{timeZone:TZ,hour:'numeric',minute:'2-digit',hour12:true});
       var sub=[e.forecast?'Forecast '+esc(e.forecast):'',e.previous?'Previous '+esc(e.previous):''].filter(Boolean).join(' · ');
-      b+='<div class="ev"><time>'+tm+'</time><div><div class="m"><span class="dot" style="background:'+IMP[e.impact].c+'"></span><span class="cur">'+esc(e.country)+'</span>'+esc(e.title)+'</div>'+(sub?'<div class="s">'+sub+'</div>':'')+'</div></div>';
+      b+='<div class="ev"><time>'+tm+'</time><div><div class="m"><span class="dot" style="background:'+IMP[e.impact].c+'"></span><span class="cur">'+esc(e.country)+'</span>'+esc(e.title)+'</div>'+(sub?'<div class="s">'+sub+'</div>':'')+infoHTML(e)+'</div></div>';
     });
     return b+'</div>';
   }
   var CONF=['Break of structure','Fair value gap','Equilibrium','Order block'];
-  var TRADE=['Has lot size been updated?','Green trade'];
+  var TRADE=['Has lot size been updated?','Enter trade'];
   var BIAS=[
     {k:'m',t:'Manipulation',d:'Asian session swept a level',r:'Reversal'},
     {k:'mr',t:'Manipulation, then reversal',d:'Asian session swept a level and reversed',r:'Continuation'},
@@ -191,7 +257,7 @@ h2{font-size:18px;margin:0;font-weight:600}
     h+='<section class="'+(tdone?'complete':'')+'">'+head(4,'Trade',tdone,sum(S.trade)+' of 2');
     h+=row('trade',0,TRADE[0]);
     h+=row('trade',1,TRADE[1],{green:true,locked:!ready()});
-    if(!ready()&&!S.trade[1]) h+='<p class="hint">Finish steps 1 to 3 to unlock the green trade.</p>';
+    if(!ready()&&!S.trade[1]) h+='<p class="hint">Finish steps 1 to 3 to unlock Enter trade.</p>';
     h+='</section>';
 
     document.getElementById('app').innerHTML=h;
