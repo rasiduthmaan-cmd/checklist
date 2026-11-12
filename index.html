@@ -86,6 +86,24 @@ h2{font-size:18px;margin:0;font-weight:600}
 .info summary{cursor:pointer;color:var(--accent)}
 .info p{margin:6px 0 0;color:var(--muted)}
 .info b{color:var(--ink);font-weight:600}
+#journal{margin-top:28px;border-top:2px solid var(--line);padding-top:14px}
+.jgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+#journal label{display:block;font-size:13px;color:var(--muted)}
+#journal select,#journal input,#journal textarea{display:block;width:100%;margin-top:4px;padding:10px;font:inherit;font-size:16px;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:8px}
+.jn{margin-top:10px}
+.btn{all:unset;box-sizing:border-box;display:block;width:100%;margin-top:12px;padding:12px;text-align:center;background:var(--accent);color:var(--accent-ink);border-radius:8px;font-weight:600;cursor:pointer}
+.btn.ghost{background:var(--surface);color:var(--ink);border:1px solid var(--line)}
+.jmsg{font-size:13px;color:var(--muted);margin:8px 0 0}
+#jsetup{margin-top:12px;font-size:14px}
+#jsetup summary{cursor:pointer;color:var(--accent)}
+.jh{font-size:16px;margin:22px 0 8px}
+.jf{border:1px solid var(--line);border-radius:8px;background:var(--surface);margin-bottom:8px;padding:10px 12px}
+.jf summary{cursor:pointer;font-weight:600}
+.jf .st{display:block;font-weight:400;color:var(--muted);font-size:13px}
+.jf .jf{background:var(--bg);margin:8px 0 0}
+.jd{margin-top:8px;padding-top:8px;border-top:1px solid var(--line);font-size:14px}
+.jd p{margin:4px 0;white-space:pre-wrap}
+.jd b{font-weight:600}
 @media (prefers-reduced-motion:reduce){.progress i{transition:none}}
 </style>
 </head>
@@ -99,6 +117,25 @@ h2{font-size:18px;margin:0;font-weight:600}
   </header>
   <div id="app"></div>
   <p class="done-msg" id="done">Checklist complete. Trade entered for today.</p>
+  <section id="journal">
+    <div class="sh"><span class="n">J</span><h2>Daily journal</h2></div>
+    <div class="jgrid">
+      <label>Result<select id="j-outcome"><option value="">Select</option><option>Win</option><option>Loss</option><option>Breakeven</option><option>No trade</option></select></label>
+      <label>Result in R<input id="j-r" type="number" step="0.1" inputmode="decimal" placeholder="1.5 or -1"></label>
+      <label>Followed the plan?<select id="j-plan"><option value="">Select</option><option>Yes</option><option>Partly</option><option>No</option></select></label>
+      <label>London bias was right?<select id="j-bias"><option value="">Select</option><option>Yes</option><option>No</option><option>Unsure</option></select></label>
+    </div>
+    <label class="jn">Notes<textarea id="j-notes" rows="5" placeholder="What happened and what to change"></textarea></label>
+    <button class="btn" id="jsave" type="button">Save day to Sheet</button>
+    <p class="jmsg" id="jmsg"></p>
+    <details id="jsetup"><summary>Sheet connection</summary>
+      <label>Web app link<input id="g-url" type="url" placeholder="https://script.google.com/macros/s/.../exec"></label>
+      <label>Passcode<input id="g-sec" type="password"></label>
+      <button class="btn ghost" id="gsave" type="button">Save connection</button>
+    </details>
+    <h3 class="jh">Past days</h3>
+    <div id="jpast"><p class="jmsg">Past days appear here once your Sheet is connected.</p></div>
+  </section>
   <button class="reset" id="reset" type="button">Reset now</button>
 </main>
 <script>
@@ -203,12 +240,13 @@ h2{font-size:18px;margin:0;font-weight:600}
   var mem=null;
 
   function today(){return new Intl.DateTimeFormat('en-CA',{timeZone:TZ}).format(new Date());}
-  function fresh(){return {date:today(),news:[0,0,0],asian:null,dir:null,conf:[0,0,0,0],trade:[0,0]};}
+  function fresh(){return {date:today(),news:[0,0,0],asian:null,dir:null,conf:[0,0,0,0],trade:[0,0],j:{outcome:'',r:'',plan:'',biasRight:'',notes:''}};}
   function load(){
     var s=null;
     try{var raw=localStorage.getItem(KEY); if(raw) s=JSON.parse(raw);}catch(e){}
     if(!s) s=mem;
     if(!s||s.date!==today()) s=fresh();
+    if(!s.j) s.j=fresh().j;
     return s;
   }
   function save(){mem=S; try{localStorage.setItem(KEY,JSON.stringify(S));}catch(e){}}
@@ -283,15 +321,77 @@ h2{font-size:18px;margin:0;font-weight:600}
     var d=e.target.closest('[data-dir]');
     if(d){S.dir=(S.dir===d.dataset.dir)?null:d.dataset.dir; save(); render();}
   });
-  document.getElementById('reset').addEventListener('click',function(){S=fresh(); save(); render();});
+  var GS_KEY='fx-gs-v1', cfg={url:'',secret:''}, rows=[];
+  try{cfg=JSON.parse(localStorage.getItem(GS_KEY))||cfg;}catch(e){}
+  function $(id){return document.getElementById(id);}
+  function jmsg(t){$('jmsg').textContent=t;}
+  function jFill(){var j=S.j;$('j-outcome').value=j.outcome;$('j-r').value=j.r;$('j-plan').value=j.plan;$('j-bias').value=j.biasRight;$('j-notes').value=j.notes;}
+  function jRead(){S.j={outcome:$('j-outcome').value,r:$('j-r').value,plan:$('j-plan').value,biasRight:$('j-bias').value,notes:$('j-notes').value};save();}
+  ['j-outcome','j-r','j-plan','j-bias','j-notes'].forEach(function(id){$(id).addEventListener('input',jRead);});
+  function entry(){
+    var b=BIAS.filter(function(x){return x.k===S.asian;})[0];
+    var got=sum(S.news)+(S.asian?1:0)+Math.min(sum(S.conf),3)+sum(S.trade);
+    return {date:S.date,bias:b?b.t+' (London: '+b.r+')':'',direction:S.dir||'',
+      confluences:CONF.filter(function(t,i){return S.conf[i];}).join(', '),
+      outcome:S.j.outcome,r:S.j.r,plan:S.j.plan,biasRight:S.j.biasRight,notes:S.j.notes,
+      checklist:got+'/9'+(S.trade[0]?', lot size updated':'')+(S.trade[1]?', trade entered':'')};
+  }
+  function jSave(){
+    if(!cfg.url||!cfg.secret){$('jsetup').open=true;jmsg('Add your Sheet link and passcode first.');return;}
+    jmsg('Saving…');
+    fetch(cfg.url,{method:'POST',body:JSON.stringify({secret:cfg.secret,entry:entry()})})
+      .then(function(r){return r.json();})
+      .then(function(d){if(d.error) throw new Error(d.error);jmsg('Saved to your Sheet.');jLoad();})
+      .catch(function(e){jmsg('Couldn’t save: '+e.message);});
+  }
+  function jLoad(){
+    if(!cfg.url||!cfg.secret) return;
+    fetch(cfg.url+'?secret='+encodeURIComponent(cfg.secret))
+      .then(function(r){return r.json();})
+      .then(function(d){if(d.error) throw new Error(d.error);rows=d.rows||[];jList();})
+      .catch(function(e){$('jpast').innerHTML='<p class="jmsg">Couldn’t load past days: '+esc(e.message)+'</p>';});
+  }
+  function jList(){
+    var by={};
+    rows.forEach(function(r){var m=String(r.date).slice(0,7);(by[m]=by[m]||[]).push(r);});
+    var months=Object.keys(by).sort().reverse(), h='';
+    if(!months.length) h='<p class="jmsg">No days saved yet.</p>';
+    months.forEach(function(m){
+      var list=by[m].sort(function(a,b){return a.date<b.date?1:-1;}), w=0,l=0,be=0,tot=0;
+      list.forEach(function(r){if(r.outcome==='Win')w++;else if(r.outcome==='Loss')l++;else if(r.outcome==='Breakeven')be++;var x=parseFloat(r.r);if(!isNaN(x))tot+=x;});
+      var n=w+l+be, name=new Date(m+'-15T12:00:00').toLocaleDateString('en-GB',{month:'long',year:'numeric'});
+      h+='<details class="jf"><summary>'+name+'<span class="st">'+list.length+' days · '+n+' trades'+(n?' · '+Math.round(w/n*100)+'% wins':'')+' · '+(tot>0?'+':'')+Math.round(tot*100)/100+'R</span></summary>';
+      list.forEach(function(r){
+        var d=new Date(r.date+'T12:00:00').toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'});
+        var rr=r.r!==''&&r.r!=null?' · '+(parseFloat(r.r)>0?'+':'')+esc(r.r)+'R':'';
+        h+='<details class="jf"><summary>'+d+' · '+esc(r.outcome||'No result')+rr+'</summary><div class="jd">'
+          +'<p><b>Bias:</b> '+esc(r.bias)+(r.direction?' · '+esc(r.direction):'')+'</p>'
+          +'<p><b>Confluences:</b> '+esc(r.confluences||'none')+'</p>'
+          +'<p><b>Checklist:</b> '+esc(r.checklist)+'</p>'
+          +'<p><b>Bias right:</b> '+esc(r.biasRight||'-')+' · <b>Followed plan:</b> '+esc(r.plan||'-')+'</p>'
+          +(r.notes?'<p><b>Notes:</b> '+esc(r.notes)+'</p>':'')+'</div></details>';
+      });
+      h+='</details>';
+    });
+    $('jpast').innerHTML=h;
+  }
+  function jInit(){jFill();$('g-url').value=cfg.url||'';$('g-sec').value=cfg.secret||'';jLoad();}
+  $('jsave').addEventListener('click',jSave);
+  $('gsave').addEventListener('click',function(){
+    cfg={url:$('g-url').value.trim(),secret:$('g-sec').value};
+    try{localStorage.setItem(GS_KEY,JSON.stringify(cfg));}catch(e){}
+    jmsg('Connection saved.');jLoad();
+  });
+  document.getElementById('reset').addEventListener('click',function(){S=fresh(); save(); render(); jFill();});
 
-  function check(){ if(S.date!==today()){S=fresh(); save(); news.state='loading'; render(); loadNews();} }
+  function check(){ if(S.date!==today()){S=fresh(); save(); news.state='loading'; render(); jFill(); loadNews();} }
   document.addEventListener('visibilitychange',function(){ if(!document.hidden) check(); });
   setInterval(check,60000);
   setInterval(loadNews,1800000);
 
   render();
   loadNews();
+  jInit();
 })();
 </script>
 </body>
