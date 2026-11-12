@@ -255,7 +255,7 @@ h2{font-size:18px;margin:0;font-weight:600}
     if(!s.conf||s.conf.length!==5) s.conf=[0,0,0,0,0];
     return s;
   }
-  function save(){mem=S; try{localStorage.setItem(KEY,JSON.stringify(S));}catch(e){}}
+  function save(){S.u=Date.now(); mem=S; try{localStorage.setItem(KEY,JSON.stringify(S));}catch(e){} pushSoon();}
   var S=load();
 
   function sum(a){return a.reduce(function(x,y){return x+y;},0);}
@@ -392,17 +392,43 @@ h2{font-size:18px;margin:0;font-weight:600}
     });
     $('jpast').innerHTML=h;
   }
-  function jInit(){jFill();$('g-url').value=cfg.url||'';$('g-sec').value=cfg.secret||'';jLoad();}
+  var pushT=null;
+  function pushSoon(){
+    if(!cfg||!cfg.url||!cfg.secret) return;
+    clearTimeout(pushT);
+    pushT=setTimeout(function(){
+      pushT=null;
+      fetch(cfg.url,{method:'POST',body:JSON.stringify({secret:cfg.secret,action:'state',state:S})}).catch(function(){});
+    },1500);
+  }
+  function pullState(){
+    if(!cfg.url||!cfg.secret||pushT) return;
+    fetch(cfg.url+'?action=state&secret='+encodeURIComponent(cfg.secret))
+      .then(function(r){return r.json();})
+      .then(function(d){
+        var r=d&&d.state;
+        if(!r){ if(S.u) pushSoon(); return; }
+        if(r.date!==today()||r.date!==S.date) return;
+        if((r.u||0)>(S.u||0)){
+          if(!r.j) r.j=fresh().j;
+          if(!r.conf||r.conf.length!==5) r.conf=[0,0,0,0,0];
+          S=r; mem=S;
+          try{localStorage.setItem(KEY,JSON.stringify(S));}catch(e){}
+          render(); jFill();
+        }
+      }).catch(function(){});
+  }
+  function jInit(){jFill();$('g-url').value=cfg.url||'';$('g-sec').value=cfg.secret||'';jLoad();pullState();setInterval(pullState,30000);}
   $('jsave').addEventListener('click',jSave);
   $('gsave').addEventListener('click',function(){
     cfg={url:$('g-url').value.trim(),secret:$('g-sec').value};
     try{localStorage.setItem(GS_KEY,JSON.stringify(cfg));}catch(e){}
-    jmsg('Connection saved.');jLoad();
+    jmsg('Connection saved.');jLoad();pullState();
   });
   document.getElementById('reset').addEventListener('click',function(){S=fresh(); save(); render(); jFill();});
 
   function check(){ if(S.date!==today()){S=fresh(); save(); news.state='loading'; render(); jFill(); loadNews();} }
-  document.addEventListener('visibilitychange',function(){ if(!document.hidden) check(); });
+  document.addEventListener('visibilitychange',function(){ if(!document.hidden){ check(); pullState(); } });
   setInterval(check,60000);
   setInterval(loadNews,1800000);
 
