@@ -272,7 +272,7 @@ h2{font-size:18px;margin:0;font-weight:600}
   }
   function confText(){
     var n=sum(S.conf); if(!n) return '';
-    return CONF.filter(function(t,i){return S.conf[i];}).join(', ')+' ('+n+'/5, '+RISK[n].t.toLowerCase()+' risk)';
+    return CONF.filter(function(t,i){return S.conf[i];}).join(', ');
   }
   function row(g,i,label,extra){
     var on=S[g][i]?'true':'false';
@@ -348,7 +348,7 @@ h2{font-size:18px;margin:0;font-weight:600}
     var b=BIAS.filter(function(x){return x.k===S.asian;})[0];
     var got=sum(S.news)+(S.asian?1:0)+sum(S.trade);
     return {date:S.date,bias:b?b.t+' (London: '+b.r+')':'',direction:S.dir||'',
-      confluences:confText(),
+      confluences:confText(),risk:(sum(S.conf)?RISK[sum(S.conf)].t+' ('+sum(S.conf)+'/5)':''),
       outcome:S.j.outcome,r:S.j.r,plan:S.j.plan,biasRight:S.j.biasRight,notes:S.j.notes,
       checklist:got+'/6'+(S.trade[0]?', lot size updated':'')+(S.trade[1]?', trade entered':'')};
   }
@@ -383,6 +383,7 @@ h2{font-size:18px;margin:0;font-weight:600}
         h+='<details class="jf"><summary>'+d+' · '+esc(r.outcome||'No result')+rr+'</summary><div class="jd">'
           +'<p><b>Bias:</b> '+esc(r.bias)+(r.direction?' · '+esc(r.direction):'')+'</p>'
           +'<p><b>Confluences:</b> '+esc(r.confluences||'none')+'</p>'
+          +'<p><b>Risk:</b> '+esc(r.risk||'-')+'</p>'
           +'<p><b>Checklist:</b> '+esc(r.checklist)+'</p>'
           +'<p><b>Bias right:</b> '+esc(r.biasRight||'-')+' · <b>Followed plan:</b> '+esc(r.plan||'-')+'</p>'
           +(r.notes?'<p><b>Notes:</b> '+esc(r.notes)+'</p>':'')+'</div></details>';
