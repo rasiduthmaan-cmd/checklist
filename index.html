@@ -119,6 +119,7 @@ h2{font-size:18px;margin:0;font-weight:600}
     <p class="date" id="date"></p>
     <div class="progress" id="bar"><i id="fill"></i></div>
     <div class="count"><span id="cnt"></span><span>Resets at midnight London time</span></div>
+    <p class="jmsg" id="sync"></p>
   </header>
   <div id="app"></div>
   <p class="done-msg" id="done">Checklist complete. Trade entered for today.</p>
@@ -126,7 +127,7 @@ h2{font-size:18px;margin:0;font-weight:600}
     <div class="sh"><span class="n">J</span><h2>Daily journal</h2></div>
     <div class="jgrid">
       <label>Result<select id="j-outcome"><option value="">Select</option><option>Win</option><option>Loss</option><option>Breakeven</option><option>No trade</option></select></label>
-      <label>Result in R<input id="j-r" type="text" placeholder="1.5 or -1" autocomplete="off" autocapitalize="off"></label>
+      <label>Profit / loss ($)<input id="j-r" type="text" placeholder="150 or -75" autocomplete="off" autocapitalize="off"></label>
       <label>Followed the plan?<select id="j-plan"><option value="">Select</option><option>Yes</option><option>Partly</option><option>No</option></select></label>
       <label>London bias was right?<select id="j-bias"><option value="">Select</option><option>Yes</option><option>No</option><option>Unsure</option></select></label>
     </div>
@@ -342,14 +343,14 @@ h2{font-size:18px;margin:0;font-weight:600}
   function $(id){return document.getElementById(id);}
   function jmsg(t){$('jmsg').textContent=t;}
   function jFill(){var j=S.j;$('j-outcome').value=j.outcome;$('j-r').value=j.r;$('j-plan').value=j.plan;$('j-bias').value=j.biasRight;$('j-notes').value=j.notes;}
-  function jRead(){S.j={outcome:$('j-outcome').value,r:$('j-r').value.replace('\u2212','-').replace(',','.').trim(),plan:$('j-plan').value,biasRight:$('j-bias').value,notes:$('j-notes').value};save();}
+  function jRead(){S.j={outcome:$('j-outcome').value,r:$('j-r').value.replace('\u2212','-').replace(/[$\s,]/g,''),plan:$('j-plan').value,biasRight:$('j-bias').value,notes:$('j-notes').value};save();}
   ['j-outcome','j-r','j-plan','j-bias','j-notes'].forEach(function(id){$(id).addEventListener('input',jRead);});
   function entry(){
     var b=BIAS.filter(function(x){return x.k===S.asian;})[0];
     var got=sum(S.news)+(S.asian?1:0)+sum(S.trade);
     return {date:S.date,bias:b?b.t+' (London: '+b.r+')':'',direction:S.dir||'',
       confluences:confText(),risk:(sum(S.conf)?RISK[sum(S.conf)].t+' ('+sum(S.conf)+'/5)':''),
-      outcome:S.j.outcome,r:S.j.r,plan:S.j.plan,biasRight:S.j.biasRight,notes:S.j.notes,
+      outcome:S.j.outcome,pnl:S.j.r,plan:S.j.plan,biasRight:S.j.biasRight,notes:S.j.notes,
       checklist:got+'/6'+(S.trade[0]?', lot size updated':'')+(S.trade[1]?', trade entered':'')};
   }
   function jSave(){
@@ -362,11 +363,12 @@ h2{font-size:18px;margin:0;font-weight:600}
   }
   function jLoad(){
     if(!cfg.url||!cfg.secret) return;
-    fetch(cfg.url+'?secret='+encodeURIComponent(cfg.secret))
+    fetch(cfg.url+'?secret='+encodeURIComponent(cfg.secret),{cache:'no-store'})
       .then(function(r){return r.json();})
       .then(function(d){if(d.error) throw new Error(d.error);rows=d.rows||[];jList();})
       .catch(function(e){$('jpast').innerHTML='<p class="jmsg">Couldn’t load past days: '+esc(e.message)+'</p>';});
   }
+  function money(x){return (x<0?'-':'+')+'$'+Math.round(Math.abs(x)*100)/100;}
   function jList(){
     var by={};
     rows.forEach(function(r){var m=String(r.date).slice(0,7);(by[m]=by[m]||[]).push(r);});
@@ -374,12 +376,12 @@ h2{font-size:18px;margin:0;font-weight:600}
     if(!months.length) h='<p class="jmsg">No days saved yet.</p>';
     months.forEach(function(m){
       var list=by[m].sort(function(a,b){return a.date<b.date?1:-1;}), w=0,l=0,be=0,tot=0;
-      list.forEach(function(r){if(r.outcome==='Win')w++;else if(r.outcome==='Loss')l++;else if(r.outcome==='Breakeven')be++;var x=parseFloat(r.r);if(!isNaN(x))tot+=x;});
+      list.forEach(function(r){if(r.outcome==='Win')w++;else if(r.outcome==='Loss')l++;else if(r.outcome==='Breakeven')be++;var x=parseFloat(r.pnl);if(!isNaN(x))tot+=x;});
       var n=w+l+be, name=new Date(m+'-15T12:00:00').toLocaleDateString('en-GB',{month:'long',year:'numeric'});
-      h+='<details class="jf"><summary>'+name+'<span class="st">'+list.length+' days · '+n+' trades'+(n?' · '+Math.round(w/n*100)+'% wins':'')+' · '+(tot>0?'+':'')+Math.round(tot*100)/100+'R</span></summary>';
+      h+='<details class="jf"><summary>'+name+'<span class="st">'+list.length+' days · '+n+' trades'+(n?' · '+Math.round(w/n*100)+'% wins':'')+' · '+money(tot)+'</span></summary>';
       list.forEach(function(r){
         var d=new Date(r.date+'T12:00:00').toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'});
-        var rr=r.r!==''&&r.r!=null?' · '+(parseFloat(r.r)>0?'+':'')+esc(r.r)+'R':'';
+        var rr=!isNaN(parseFloat(r.pnl))?' · '+money(parseFloat(r.pnl)):'';
         h+='<details class="jf"><summary>'+d+' · '+esc(r.outcome||'No result')+rr+'</summary><div class="jd">'
           +'<p><b>Bias:</b> '+esc(r.bias)+(r.direction?' · '+esc(r.direction):'')+'</p>'
           +'<p><b>Confluences:</b> '+esc(r.confluences||'none')+'</p>'
@@ -393,20 +395,28 @@ h2{font-size:18px;margin:0;font-weight:600}
     $('jpast').innerHTML=h;
   }
   var pushT=null;
+  function syncMsg(t){$('sync').textContent=t;}
+  function nowT(){return new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});}
   function pushSoon(){
     if(!cfg||!cfg.url||!cfg.secret) return;
     clearTimeout(pushT);
     pushT=setTimeout(function(){
       pushT=null;
-      fetch(cfg.url,{method:'POST',body:JSON.stringify({secret:cfg.secret,action:'state',state:S})}).catch(function(){});
+      fetch(cfg.url,{method:'POST',body:JSON.stringify({secret:cfg.secret,action:'state',state:S})})
+        .then(function(r){return r.json();})
+        .then(function(d){if(d&&d.ok) syncMsg('Synced '+nowT()); else syncMsg('Sync off: '+((d&&d.error)||'your Sheet script is out of date. Deploy a new version.'));})
+        .catch(function(){syncMsg('Sync failed: no connection or old script.');});
     },1500);
   }
   function pullState(){
     if(!cfg.url||!cfg.secret||pushT) return;
-    fetch(cfg.url+'?action=state&secret='+encodeURIComponent(cfg.secret))
+    fetch(cfg.url+'?action=state&secret='+encodeURIComponent(cfg.secret),{cache:'no-store'})
       .then(function(r){return r.json();})
       .then(function(d){
         var r=d&&d.state;
+        if(d&&d.error){ syncMsg('Sync off: '+d.error); return; }
+        if(!d||!('state' in d)){ syncMsg('Sync off: your Sheet script is out of date. Deploy a new version.'); return; }
+        syncMsg('Synced '+nowT());
         if(!r){ if(S.u) pushSoon(); return; }
         if(r.date!==today()||r.date!==S.date) return;
         if((r.u||0)>(S.u||0)){
@@ -416,9 +426,9 @@ h2{font-size:18px;margin:0;font-weight:600}
           try{localStorage.setItem(KEY,JSON.stringify(S));}catch(e){}
           render(); jFill();
         }
-      }).catch(function(){});
+      }).catch(function(){syncMsg('Sync failed: no connection.');});
   }
-  function jInit(){jFill();$('g-url').value=cfg.url||'';$('g-sec').value=cfg.secret||'';jLoad();pullState();setInterval(pullState,30000);}
+  function jInit(){jFill();if(!cfg.url||!cfg.secret) syncMsg('Not synced yet: add your Sheet link and passcode at the bottom.');$('g-url').value=cfg.url||'';$('g-sec').value=cfg.secret||'';jLoad();pullState();setInterval(pullState,30000);}
   $('jsave').addEventListener('click',jSave);
   $('gsave').addEventListener('click',function(){
     cfg={url:$('g-url').value.trim(),secret:$('g-sec').value};
@@ -427,7 +437,7 @@ h2{font-size:18px;margin:0;font-weight:600}
   });
   document.getElementById('reset').addEventListener('click',function(){S=fresh(); save(); render(); jFill();});
 
-  function check(){ if(S.date!==today()){S=fresh(); save(); news.state='loading'; render(); jFill(); loadNews();} }
+  function check(){ if(S.date!==today()){S=fresh(); mem=S; news.state='loading'; render(); jFill(); loadNews();} }
   document.addEventListener('visibilitychange',function(){ if(!document.hidden){ check(); pullState(); } });
   setInterval(check,60000);
   setInterval(loadNews,1800000);
